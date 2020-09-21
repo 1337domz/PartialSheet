@@ -31,6 +31,9 @@ struct PartialSheet: ViewModifier {
     /// The offset for keyboard height
     @State private var offset: CGFloat = 0
     
+    /// The sheets y position, default it to off the screen
+    @State private var sheetPosition: CGFloat = UIScreen.main.bounds.height
+    
     /// The point for the top anchor
     private var topAnchor: CGFloat {
         return max(presenterContentRect.height +
@@ -57,18 +60,18 @@ struct PartialSheet: ViewModifier {
     }
     
     /// Calculates the sheets y position
-    private var sheetPosition: CGFloat {
-        if self.manager.isPresented {
-            let topInset = UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20.0 // 20.0 = To make sure we dont go under statusbar on screens without safe area inset
-            let position = self.topAnchor + self.dragState.translation.height - self.offset
-            if position < topInset {
-                return topInset
+    func calculateSheetPosition(isPresented: Bool) -> CGFloat {
+            if isPresented {
+                let topInset = UIApplication.shared.windows.first?.safeAreaInsets.top ?? 20.0 // 20.0 = To make sure we dont go under statusbar on screens without safe area inset
+                let position = self.topAnchor + self.dragState.translation.height - self.offset
+                if position < topInset {
+                    return topInset
+                }
+                
+                return position
+            } else {
+                return self.bottomAnchor - self.dragState.translation.height
             }
-            
-            return position
-        } else {
-            return self.bottomAnchor - self.dragState.translation.height
-        }
     }
     
     /// The Gesture State for the drag gesture
@@ -189,7 +192,7 @@ extension PartialSheet {
                 }
                 .edgesIgnoringSafeArea(.vertical)
                 .onTapGesture {
-                    withAnimation {
+                    withAnimation(.interpolatingSpring(stiffness: 300.0, damping: 30.0, initialVelocity: 10.0)) {
                         self.manager.isPresented = false
                         self.dismissKeyboard()
                         self.manager.onDismiss?()
@@ -216,7 +219,6 @@ extension PartialSheet {
                                     Color.clear.preference(key: SheetPreferenceKey.self, value: [PreferenceData(bounds: proxy.frame(in: .global))])
                                 }
                         )
-                        .animation(nil)
                     }
                     Spacer()
                 }
@@ -228,9 +230,13 @@ extension PartialSheet {
                 .cornerRadius(style.cornerRadius)
                 .shadow(color: Color(.sRGBLinear, white: 0, opacity: 0.13), radius: 10.0)
                 .offset(y: self.sheetPosition)
-                .animation(self.dragState.isDragging ?
-                            nil : .interpolatingSpring(stiffness: 300.0, damping: 30.0, initialVelocity: 10.0))
                 .gesture(drag)
+                .onChange(of: manager.isPresented) { value in
+                    withAnimation(.interpolatingSpring(stiffness: 300.0, damping: 30.0, initialVelocity: 10.0)) {
+                        sheetPosition = calculateSheetPosition(isPresented: value)
+                    }
+                }
+
             }
         }
     }
@@ -240,7 +246,7 @@ extension PartialSheet {
 extension PartialSheet {
 
     /// Create a new **DragGesture** with *updating* and *onEndend* func
-    private func dragGesture() -> _EndedGesture<GestureStateGesture<DragGesture, DragState>> {
+    private func dragGesture() -> _EndedGesture<_ChangedGesture<GestureStateGesture<DragGesture, DragState>>> {
         DragGesture(minimumDistance: 30, coordinateSpace: .local)
             .updating($dragState) { drag, state, _ in
                 self.dismissKeyboard()
@@ -259,6 +265,11 @@ extension PartialSheet {
                     state = .dragging(translation: CGSize(width: drag.translation.width, height: translationHeight))
                 }
         }
+            .onChanged { _ in
+                withAnimation(.interpolatingSpring(stiffness: 300.0, damping: 30.0, initialVelocity: 10.0)) {
+                    sheetPosition = calculateSheetPosition(isPresented: true)
+                }
+            }
         .onEnded(onDragEnded)
     }
     
@@ -292,6 +303,9 @@ extension PartialSheet {
                 manager.onDismiss?()
             }
         }
+        withAnimation(.interpolatingSpring(stiffness: 300.0, damping: 30.0, initialVelocity: 10.0)) {
+            sheetPosition = calculateSheetPosition(isPresented: true)
+        }
     }
 }
 
@@ -305,6 +319,7 @@ extension PartialSheet {
             let height = rect.height
             let bottomInset = UIApplication.shared.windows.first?.safeAreaInsets.bottom
             self.offset = height - (bottomInset ?? 0)
+            self.sheetPosition = calculateSheetPosition(isPresented: self.manager.isPresented)
         }
     }
 
@@ -312,6 +327,7 @@ extension PartialSheet {
     private func keyboardHide(notification: Notification) {
         DispatchQueue.main.async {
             self.offset = 0
+            self.sheetPosition = calculateSheetPosition(isPresented: self.manager.isPresented)
         }
     }
     

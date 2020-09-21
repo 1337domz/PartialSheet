@@ -69,6 +69,10 @@ struct ContentView: View {
                         destination: ViewModifierExample(),
                         label: {Text("ViewModifier Example")
                     })
+                    NavigationLink(
+                        destination: AnimationExample(),
+                        label: {Text("Animation Example")
+                    })
                 }
                 Spacer()
                 Spacer()
